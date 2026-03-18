@@ -50,7 +50,14 @@ from .asset import Asset
 from .reaction import Reaction
 from .emoji import Emoji
 from .partial_emoji import PartialEmoji
-from .enums import InteractionType, MessageReferenceType, MessageType, ChannelType, try_enum
+from .enums import (
+    InteractionType,
+    MessageReferenceType,
+    MessageType,
+    ChannelType,
+    BaseTheme,
+    try_enum,
+)
 from .errors import HTTPException
 from .components import _component_factory
 from .embeds import Embed
@@ -81,6 +88,7 @@ if TYPE_CHECKING:
         CallMessage as CallMessagePayload,
         PurchaseNotificationResponse as PurchaseNotificationResponsePayload,
         GuildProductPurchase as GuildProductPurchasePayload,
+        SharedClientTheme as SharedClientThemeData,
     )
 
     from .types.interactions import MessageInteraction as MessageInteractionPayload
@@ -120,6 +128,7 @@ __all__ = (
     'CallMessage',
     'GuildProductPurchase',
     'PurchaseNotification',
+    'SharedClientTheme',
 )
 
 
@@ -410,7 +419,12 @@ class Attachment(Hashable):
         data = await self.read(use_cached=use_cached)
         file_filename = filename if filename is not MISSING else self.filename
         file_description = description if description is not MISSING else self.description
-        return File(io.BytesIO(data), filename=file_filename, description=file_description, spoiler=spoiler)
+        return File(
+            io.BytesIO(data),
+            filename=file_filename,
+            description=file_description,
+            spoiler=spoiler,
+        )
 
     def to_dict(self) -> AttachmentPayload:
         result: AttachmentPayload = {
@@ -635,7 +649,15 @@ class MessageReference:
         .. versionadded:: 1.6
     """
 
-    __slots__ = ('type', 'message_id', 'channel_id', 'guild_id', 'fail_if_not_exists', 'resolved', '_state')
+    __slots__ = (
+        'type',
+        'message_id',
+        'channel_id',
+        'guild_id',
+        'fail_if_not_exists',
+        'resolved',
+        '_state',
+    )
 
     def __init__(
         self,
@@ -771,7 +793,13 @@ class MessageInteraction(Hashable):
 
     __slots__: Tuple[str, ...] = ('id', 'type', 'name', 'user')
 
-    def __init__(self, *, state: ConnectionState, guild: Optional[Guild], data: MessageInteractionPayload) -> None:
+    def __init__(
+        self,
+        *,
+        state: ConnectionState,
+        guild: Optional[Guild],
+        data: MessageInteractionPayload,
+    ) -> None:
         self.id: int = int(data['id'])
         self.type: InteractionType = try_enum(InteractionType, data['type'])
         self.name: str = data['name']
@@ -857,7 +885,13 @@ class MessageInteractionMetadata(Hashable):
         '_guild',
     )
 
-    def __init__(self, *, state: ConnectionState, guild: Optional[Guild], data: MessageInteractionMetadataPayload) -> None:
+    def __init__(
+        self,
+        *,
+        state: ConnectionState,
+        guild: Optional[Guild],
+        data: MessageInteractionMetadataPayload,
+    ) -> None:
         self._guild: Optional[Guild] = guild
         self._state: ConnectionState = state
 
@@ -1000,7 +1034,12 @@ class MessageApplication:
     def icon(self) -> Optional[Asset]:
         """Optional[:class:`Asset`]: The application's icon, if any."""
         if self._icon:
-            return Asset._from_app_icon(state=self._state, object_id=self.id, icon_hash=self._icon, asset_type='icon')
+            return Asset._from_app_icon(
+                state=self._state,
+                object_id=self.id,
+                icon_hash=self._icon,
+                asset_type='icon',
+            )
         return None
 
     @property
@@ -1008,7 +1047,10 @@ class MessageApplication:
         """Optional[:class:`Asset`]: The application's cover image, if any."""
         if self._cover_image:
             return Asset._from_app_icon(
-                state=self._state, object_id=self.id, icon_hash=self._cover_image, asset_type='cover_image'
+                state=self._state,
+                object_id=self.id,
+                icon_hash=self._cover_image,
+                asset_type='cover_image',
             )
         return None
 
@@ -1142,6 +1184,56 @@ class PurchaseNotification:
         guild_product_purchase = data.get('guild_product_purchase')
         if guild_product_purchase is not None:
             self.guild_product_purchase = GuildProductPurchase(guild_product_purchase)
+
+
+class SharedClientTheme:
+    """Represents a shared client theme attached to a Discord message.
+
+    .. versionadded:: 2.5
+
+    Attributes
+    ----------
+    colors: List[:class:`str`]
+        The hex-encoded colors of the theme (up to 5).
+    gradient_angle: :class:`int`
+        The direction of the theme's color gradient (0–360).
+    base_mix: :class:`int`
+        The intensity of the theme's colors (0–100).
+    base_theme: Optional[:class:`BaseTheme`]
+        The light/dark mode of the theme, if set.
+    """
+
+    __slots__ = ('colors', 'gradient_angle', 'base_mix', 'base_theme')
+
+    def __init__(self, data: SharedClientThemeData) -> None:
+        self.colors: List[str] = data['colors']
+        self.gradient_angle: int = data['gradient_angle']
+        self.base_mix: int = data['base_mix']
+        raw_base_theme = data.get('base_theme')
+        self.base_theme: Optional[BaseTheme] = try_enum(BaseTheme, raw_base_theme) if raw_base_theme is not None else None
+
+    def __repr__(self) -> str:
+        return (
+            f'<SharedClientTheme colors={self.colors!r} gradient_angle={self.gradient_angle}'
+            f' base_mix={self.base_mix} base_theme={self.base_theme!r}>'
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Converts this theme to a dict suitable for the Discord API.
+
+        Returns
+        -------
+        Dict[:class:`str`, Any]
+            The dict representation of this theme.
+        """
+        result: Dict[str, Any] = {
+            'colors': self.colors,
+            'gradient_angle': self.gradient_angle,
+            'base_mix': self.base_mix,
+        }
+        if self.base_theme is not None:
+            result['base_theme'] = self.base_theme.value
+        return result
 
 
 class PartialMessage(Hashable):
@@ -2134,6 +2226,10 @@ class Message(PartialMessage, Hashable):
         The data of the purchase notification that prompted this :attr:`MessageType.purchase_notification` message.
 
         .. versionadded:: 2.5
+    shared_client_theme: Optional[:class:`SharedClientTheme`]
+        The custom client-side theme shared via this message, if any.
+
+        .. versionadded:: 2.5
     message_snapshots: List[:class:`MessageSnapshot`]
         The message snapshots attached to this message.
 
@@ -2176,6 +2272,7 @@ class Message(PartialMessage, Hashable):
         'poll',
         'call',
         'purchase_notification',
+        'shared_client_theme',
         'message_snapshots',
         '_pinned_at',
     )
@@ -2323,7 +2420,22 @@ class Message(PartialMessage, Hashable):
         else:
             self.purchase_notification = PurchaseNotification(purchase_notification)
 
-        for handler in ('author', 'member', 'mentions', 'mention_roles', 'components', 'call'):
+        self.shared_client_theme: Optional[SharedClientTheme] = None
+        try:
+            shared_client_theme = data['shared_client_theme']  # pyright: ignore[reportTypedDictNotRequiredAccess]
+        except KeyError:
+            pass
+        else:
+            self.shared_client_theme = SharedClientTheme(shared_client_theme)
+
+        for handler in (
+            'author',
+            'member',
+            'mentions',
+            'mention_roles',
+            'components',
+            'call',
+        ):
             try:
                 getattr(self, f'_handle_{handler}')(data[handler])  # type: ignore
             except KeyError:
